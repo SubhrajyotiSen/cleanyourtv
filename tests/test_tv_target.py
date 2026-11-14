@@ -108,9 +108,33 @@ class TvTargetTest(unittest.TestCase):
 
         tv = load_tv({"TV_HOST": "192.0.2.1:39482"})
         with mock.patch.object(tv, "AdbDeviceTcp", StubAdbDeviceTcp), \
-                mock.patch.object(tv, "get_signer", return_value=None):
+                mock.patch.object(tv, "get_signer", return_value=None), \
+                mock.patch.object(tv, "disconnect_stock_adb") as disconnect:
             tv.connect()
         self.assertEqual(created_devices, [("192.0.2.1", 39482)])
+        disconnect.assert_called_once_with("192.0.2.1", 39482)
+
+    def test_disconnect_stock_adb_runs_adb_disconnect_when_adb_is_on_path(self):
+        tv = load_tv({"TV_HOST": "192.0.2.1"})
+        with mock.patch.object(tv.shutil, "which", return_value="/usr/bin/adb"), \
+                mock.patch.object(tv.subprocess, "run") as run:
+            tv.disconnect_stock_adb("192.0.2.1", 5555)
+        run.assert_called_once_with(
+            ["/usr/bin/adb", "disconnect", "192.0.2.1:5555"],
+            stdout=tv.subprocess.DEVNULL, stderr=tv.subprocess.DEVNULL, timeout=5.0)
+
+    def test_disconnect_stock_adb_brackets_ipv6_and_ignores_missing_or_failing_adb(self):
+        tv = load_tv({"TV_HOST": "[2001:db8::8]:5555"})
+        with mock.patch.object(tv.shutil, "which", return_value=None), \
+                mock.patch.object(tv.subprocess, "run") as run:
+            tv.disconnect_stock_adb("2001:db8::8", 5555)
+        run.assert_not_called()
+        with mock.patch.object(tv.shutil, "which", return_value="/usr/bin/adb"), \
+                mock.patch.object(tv.subprocess, "run", side_effect=OSError("no adb")) as run:
+            tv.disconnect_stock_adb("2001:db8::8", 5555)
+        run.assert_called_once_with(
+            ["/usr/bin/adb", "disconnect", "[2001:db8::8]:5555"],
+            stdout=tv.subprocess.DEVNULL, stderr=tv.subprocess.DEVNULL, timeout=5.0)
 
 
 if __name__ == "__main__":

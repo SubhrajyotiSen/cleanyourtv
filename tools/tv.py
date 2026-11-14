@@ -309,10 +309,30 @@ class NativeAdbDevice:
         pass  # Each subprocess is closed; leave the shared ADB server and transport alone.
 
 
+def disconnect_stock_adb(host, port):
+    """Disconnect the stock Google ADB server from `host:port` before adb_shell connects.
+
+    Some firmware's `adbd` serves only one client at a time (#1185): if the user ran `adb connect`
+    earlier, the stock `adb` server holds the TCP session and `adb_shell`'s handshake times out.
+    Disconnect only this endpoint (never `adb kill-server`, which would drop other devices), and
+    ignore a missing `adb` binary or any subprocess failure.
+    """
+    adb = shutil.which("adb")
+    if not adb:
+        return
+    serial = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+    try:
+        subprocess.run([adb, "disconnect", serial],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5.0)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def connect(timeout=120):
     binary = os.environ.get("TV_ADB_BINARY")
     if binary:
         return NativeAdbDevice(binary, HOST, PORT, timeout)
+    disconnect_stock_adb(HOST, PORT)
     dev = AdbDeviceTcp(HOST, PORT, default_transport_timeout_s=float(timeout))
     keys = [get_signer()]   # first, so the prompt asks for the same key as before
     stock = stock_signer()
